@@ -11,7 +11,10 @@ import (
 	quic "github.com/lucas-clemente/quic-go"
 )
 
-const addr = "0.0.0.0:4242"
+// This is a mpquic server which receives frames and saves them to jpeg files.
+
+// quic server attaching to port 4242 on all the interfaces.
+const quicServerAddr = "0.0.0.0:4242"
 
 func main() {
 
@@ -19,8 +22,9 @@ func main() {
 		CreatePaths: true,
 	}
 
-	fmt.Println("Attaching to: ", addr)
-	listener, err := quic.ListenAddr(addr, utils.GenerateTLSConfig(), quicConfig)
+	// initializing mpquic server
+	fmt.Println("Attaching to: ", quicServerAddr)
+	listener, err := quic.ListenAddr(quicServerAddr, utils.GenerateTLSConfig(), quicConfig)
 	utils.HandleError(err)
 
 	fmt.Println("Server started! Waiting for streams from client...")
@@ -38,15 +42,14 @@ func main() {
 
 	fmt.Println("stream created: ", stream.StreamID())
 
-	counter := 0
+	frame_counter := 0
+
+	// Infinite loop which receives frames from go sender peer and then saves them as jpeg files.
 	for {
-		// reply := make([]byte, 64000)
+		frame_size := make([]byte, 20)
+		_, err = io.ReadFull(stream, frame_size)
 
-		reply_size := make([]byte, 20)
-		// _, err = stream.Read(reply_size)
-		_, err = io.ReadFull(stream, reply_size)
-
-		size, _ := strconv.ParseInt(strings.Trim(string(reply_size), ":"), 10, 64)
+		size, _ := strconv.ParseInt(strings.Trim(string(frame_size), ":"), 10, 64)
 
 		if size == 0 {
 			break
@@ -54,22 +57,15 @@ func main() {
 
 		println("frame size: ", size)
 
-		reply := make([]byte, size)
+		frame := make([]byte, size)
 
-		// stream.Read(reply)
-		_, err = io.ReadFull(stream, reply)
+		_, err = io.ReadFull(stream, frame)
 
-		f, err := os.Create("sample/img" + strconv.Itoa(counter) + ".jpg")
-		counter += 1
-		// if counter == 100 {
-		// 	break
-		// }
-		if err != nil {
-			panic(err)
-		}
-		f.Write(reply)
-		f.Close()
+		jpeg_file, err := os.Create("sample/img" + strconv.Itoa(frame_counter) + ".jpg")
+		utils.HandleError(err)
+		frame_counter += 1
+
+		jpeg_file.Write(frame)
+		jpeg_file.Close()
 	}
-	os.Exit(1)
-
 }

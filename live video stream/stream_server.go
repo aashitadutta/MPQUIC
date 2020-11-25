@@ -13,11 +13,18 @@ import (
 	quic "github.com/lucas-clemente/quic-go"
 )
 
+// This script receives frames via TCP from the stream generator, and then transmits it to
+// the peer using mpquic sockets.
+// this script is acting as client for both tcp as well as mpquic server.
+
+// config
+const tcpServerAddr = "localhost:8002"
+const quicServerAddr = "192.168.31.53:4242"
+
 func main() {
 
 	// tcp connection
-	servAddr := "localhost:8002"
-	tcpAddr, err := net.ResolveTCPAddr("tcp", servAddr)
+	tcpAddr, err := net.ResolveTCPAddr("tcp", tcpServerAddr)
 	if err != nil {
 		println("ResolveTCPAddr failed:", err.Error())
 		os.Exit(1)
@@ -28,86 +35,52 @@ func main() {
 		println("Dial failed:", err.Error())
 		os.Exit(1)
 	}
-
 	defer conn.Close()
 
-	// quic config
-	const addr = "localhost:4242"
+	// mpquic connection
 	quicConfig := &quic.Config{
 		CreatePaths: true,
 	}
 
-	sess, err := quic.DialAddr(addr, &tls.Config{InsecureSkipVerify: true}, quicConfig)
+	sess, err := quic.DialAddr(quicServerAddr, &tls.Config{InsecureSkipVerify: true}, quicConfig)
 	utils.HandleError(err)
 
 	fmt.Println("session created: ", sess.RemoteAddr())
 
 	stream, err := sess.OpenStream()
 	utils.HandleError(err)
+
 	defer stream.Close()
 	defer stream.Close()
 
 	fmt.Println("stream created...")
-	fmt.Println("Client connected")
-	counter := 0
 
+	// Infinite loop which takes frame from stream generator and then transmit it to the peer using
+	// mpquic stream.
 	for {
+		// receive the frame size
+		frame_size := make([]byte, 20)
+		_, err = io.ReadFull(conn, frame_size)
+		utils.HandleError(err)
 
-		reply_size := make([]byte, 20)
-		// _, err = conn.Read(reply_size)
-		_, err = io.ReadFull(conn, reply_size)
+		// fetch size value from the packet by removing trailing ':' symbols.
+		size, _ := strconv.ParseInt(strings.Trim(string(frame_size), ":"), 10, 64)
 
-		if reply_size == nil {
-			break
-		}
-
-		size, _ := strconv.ParseInt(strings.Trim(string(reply_size), ":"), 10, 64)
-
+		// terminate the process when an empty packet is received.
 		if size == 0 {
-			stream.Write(reply_size)
+			// send the reply size of zero to terminate the peer.
+			stream.Write(frame_size)
 			break
 		}
+		println("frame size: ", size)
 
-		// if size == 0 {
-		// 	// break
-		// 	time.Sleep(10 * time.Millisecond)
-		// 	continue
-		// }
-		print("frame size: ", size)
+		// receive the actual frame
+		frame := make([]byte, size)
+		_, err = io.ReadFull(conn, frame)
+		utils.HandleError(err)
 
-		reply := make([]byte, size)
-		println("waiting for server's reply...")
-		// _, err = conn.Read(reply)
-		_, err = io.ReadFull(conn, reply)
-		// println(reply)
-		// break
-		if err != nil {
-			println("read to server failed:", err.Error())
-			os.Exit(1)
-		}
-
-		println("reply from server: ", len((reply)), "bytes")
-
-		// f, err := os.Create("sample/img.jpg")
-		// if err != nil {
-		// 	panic(err)
-		// }
-		// f.Write(reply)
-		// f.Close()
-		// os.Exit(1)
-
-		// now send this via mpquic
-
-		// f, err := os.Create("sample/img" + strconv.Itoa(counter) + "_server.jpg")
-		// if err != nil {
-		// 	panic(err)
-		// }
-		counter += 1
-		// f.Write(reply)
-		// f.Close()
-
-		stream.Write(reply_size)
-		stream.Write(reply)
-
+		// Send the frame size and frame using mpquic stream
+		stream.Write(frame_size)
+		stream.Write(frame)
 	}
 }
