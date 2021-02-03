@@ -14,7 +14,7 @@ import (
 )
 
 // const addr = config.SERVER_ADDR
-const threshold = 5 * 1024  // 5KB
+const threshold = 10 * 1024  // 10KB
 //TODO: set this threshold dynamically, based on network conditions
 
 
@@ -22,6 +22,9 @@ func main() {
 
     quicConfig := &quic.Config{
         CreatePaths: true,
+        
+		HandshakeTimeout: 30 * time.Second,
+		IdleTimeout:      60 * time.Second,
     }
 
     fileToSend := os.Args[1]
@@ -44,12 +47,19 @@ func main() {
     fileInfo, err := file.Stat()
     utils.HandleError(err)
 
-    if fileInfo.Size() <= threshold {
+    if fileInfo.Size() <= threshold{
         quicConfig.CreatePaths = false
         fmt.Println("File is small, using single path only.")
     } else {
         fmt.Println("file is large, using multipath now.")
     }
+    //if fileInfo.Size() <= threshold && quicConfig.CreatePaths{
+        //quicConfig.CreatePaths = false
+        //fmt.Println("Both interface is working.")
+    //} else{
+        
+        //fmt.Println("one interface is working.")
+    //}
     file.Close()
 
     fmt.Println("Trying to connect to: ", addr)
